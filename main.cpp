@@ -30,19 +30,6 @@ const char* GetRegionName(UINT32 type)
 	}
 }
 
-PHYSICAL_ADDRESS kernel_dtb = 0;
-
-UINT32 HashRegionDatabase()
-{
-	auto RegionDatabase = MiSystemRegionTypeDatabase();
-	UINT32 hash = 134345345u;
-	for (int i = 0; i < 255; i++) {
-		UINT32 v = RegionDatabase[i];
-		hash ^= v + 0x9e3779b9u + (hash << 6) + (hash >> 2);
-	}
-	return hash;
-}
-
 BOOLEAN ValidateTranslation(PHYSICAL_ADDRESS page)
 {
 	auto PfnDatabase = MmPfnDatabase();
@@ -52,13 +39,6 @@ BOOLEAN ValidateTranslation(PHYSICAL_ADDRESS page)
 	if (PteAddress.pml4e_index <= 256)
 		return false;// usermode pte will miss identify page as normal
 
-	// PfnDatabase ptr points to diffrent data since they are a per process structure
-	// but the tranlstion ptes should be in both kernel and usermode dtb since they 
-	// are managed by both contexts
-	auto pPte = Utils::ReadLinear<LINEAR_ADDRESS>(kernel_dtb, &PfnDatabase[page >> PAGE_SHIFT].PteAddress);
-	if(pPte.AsUINT64 != PteAddress.AsUINT64)
-		return false;
-
 	auto type = RegionDatabase[PteAddress.pml4e_index - 256];
 	if (type != AssignedRegionSystemCache)
 		return false;// pfn page is not marked as system cache
@@ -66,21 +46,15 @@ BOOLEAN ValidateTranslation(PHYSICAL_ADDRESS page)
 	return true;
 }
 
+
 void ValidateUsermodePageMapping(PEPROCESS eproc)
 {
 	SIZE_T bytes_copied = 0;
 	KAPC_STATE apc;
 
-	kernel_dtb = __readcr3();
-
 	auto dtb = *(UINT64*)((UINT64)eproc + 0x28) & ~0xFFF;
 
-	auto hash = HashRegionDatabase();
-
 	KeStackAttachProcess(eproc, &apc);
-
-	if(HashRegionDatabase() != hash)
-		printf("[PID 0x%08X] RegionDatabase hash mismatch!\n", PsGetProcessId(eproc));
 
 	auto pml4_pa = dtb;
 	if (!ValidateTranslation(pml4_pa))
@@ -178,11 +152,50 @@ void ScanEProcess()
 }
 
 
-
-
 NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
 {
-	ScanEProcess();
+	auto RegionDatabase = (_MI_ASSIGNED_REGION_TYPES*)MiSystemRegionTypeDatabase();
+
+	for (int i = 0; i < 255; i++)
+	{
+		if (RegionDatabase[i] == AssignedRegionSystemCache)
+		{
+			LINEAR_ADDRESS rva;
+			rva.AsUINT64 = 0xFFFF000000000000;
+			rva.pml4e_index = i + 256;
+
+			for (int lv2 = 0; lv2 < 512; lv2++)
+			{
+				for (int lv3 = 0; lv3 < 512; lv3++)
+				{
+					for (int lv4 = 0; lv4 < 512; lv4++)
+					{
+						rva.pdpte_index = lv2;
+						rva.pde_index = lv3;
+						rva.pte_index = lv4;
+						auto pa = MmGetPhysicalAddress(rva.AsPointer);
+						if (pa)
+						{
+							auto va = MmGetVirtualForPhysical(pa);
+							auto type = MiGetSystemRegionType(va);
+							
+							if (type && type != AssignedRegionSystemCache)
+							{
+								printf("%s", GetRegionName(type));
+								printf(" - Subpage found at RVA: %p %i %i %i [ PFN: %010LLX ]\n", rva.AsUINT64, rva.pdpte_index, rva.pde_index, rva.pte_index, pa >> PAGE_SHIFT);
+								return STATUS_SUCCESS;
+							}
+						}
+
+					}
+				}
+			}
+
+			//printf("System Cache Region found at PML4E index %d [ RVA: %p ]\n", i + 256, rva.AsUINT64);
+		}
+	}
+
+	//ScanEProcess();
 
 	return STATUS_SUCCESS;
 }
