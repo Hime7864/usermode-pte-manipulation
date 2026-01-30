@@ -58,7 +58,12 @@ void ValidateUsermodePageMapping(PEPROCESS eproc)
 
 	auto pml4_pa = dtb;
 	if (!ValidateTranslation(pml4_pa))
+	{
 		printf("[PID 0x%08X] PfnDatabase validation failed! PML4\n", PsGetProcessId(eproc));
+		KeUnstackDetachProcess(&apc);
+		return;
+	}
+
 	auto pml4 = (MMPTE_HARDWARE*)MmGetVirtualForPhysical(pml4_pa);
 	for (int l1 = 0; l1 < 256; l1++)
 	{
@@ -66,7 +71,12 @@ void ValidateUsermodePageMapping(PEPROCESS eproc)
 		{
 			auto pdpt_pa = pml4[l1].PageFrameNumber << PAGE_SHIFT;
 			if (!ValidateTranslation(pdpt_pa))
+			{
 				printf("[PID 0x%08X] PfnDatabase validation failed! PDPT\n", PsGetProcessId(eproc));
+				KeUnstackDetachProcess(&apc);
+				return;
+			}
+				
 			auto pdpt = (MMPTE_HARDWARE*)MmGetVirtualForPhysical(pdpt_pa);
 			for (int l2 = 0; l2 < 512; l2++)
 			{
@@ -74,7 +84,12 @@ void ValidateUsermodePageMapping(PEPROCESS eproc)
 				{
 					auto pdt_pa = pdpt[l2].PageFrameNumber << PAGE_SHIFT;
 					if (!ValidateTranslation(pdt_pa))
+					{
 						printf("[PID 0x%08X] PfnDatabase validation failed! PDT\n", PsGetProcessId(eproc));
+						KeUnstackDetachProcess(&apc);
+						return;
+					}
+						
 					auto pdt = (MMPTE_HARDWARE*)MmGetVirtualForPhysical(pdt_pa);
 					for (int l3 = 0; l3 < 512; l3++)
 					{
@@ -82,7 +97,12 @@ void ValidateUsermodePageMapping(PEPROCESS eproc)
 						{
 							auto pte_pa = pdt[l3].PageFrameNumber << PAGE_SHIFT;
 							if (!ValidateTranslation(pte_pa))
+							{
 								printf("[PID 0x%08X] PfnDatabase validation failed! PTE\n", PsGetProcessId(eproc));
+								KeUnstackDetachProcess(&apc);
+								return;
+							}
+								
 							auto pte = (MMPTE_HARDWARE*)MmGetVirtualForPhysical(pte_pa);
 							for (int l4 = 0; l4 < 512; l4++)
 							{
@@ -125,6 +145,7 @@ void ValidateUsermodePageMapping(PEPROCESS eproc)
 		}
 	}
 	KeUnstackDetachProcess(&apc);
+	return;
 }
 
 void ScanEProcess()
@@ -154,48 +175,7 @@ void ScanEProcess()
 
 NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
 {
-	auto RegionDatabase = (_MI_ASSIGNED_REGION_TYPES*)MiSystemRegionTypeDatabase();
-
-	for (int i = 0; i < 255; i++)
-	{
-		if (RegionDatabase[i] == AssignedRegionSystemCache)
-		{
-			LINEAR_ADDRESS rva;
-			rva.AsUINT64 = 0xFFFF000000000000;
-			rva.pml4e_index = i + 256;
-
-			for (int lv2 = 0; lv2 < 512; lv2++)
-			{
-				for (int lv3 = 0; lv3 < 512; lv3++)
-				{
-					for (int lv4 = 0; lv4 < 512; lv4++)
-					{
-						rva.pdpte_index = lv2;
-						rva.pde_index = lv3;
-						rva.pte_index = lv4;
-						auto pa = MmGetPhysicalAddress(rva.AsPointer);
-						if (pa)
-						{
-							auto va = MmGetVirtualForPhysical(pa);
-							auto type = MiGetSystemRegionType(va);
-							
-							if (type && type != AssignedRegionSystemCache)
-							{
-								printf("%s", GetRegionName(type));
-								printf(" - Subpage found at RVA: %p %i %i %i [ PFN: %010LLX ]\n", rva.AsUINT64, rva.pdpte_index, rva.pde_index, rva.pte_index, pa >> PAGE_SHIFT);
-								return STATUS_SUCCESS;
-							}
-						}
-
-					}
-				}
-			}
-
-			//printf("System Cache Region found at PML4E index %d [ RVA: %p ]\n", i + 256, rva.AsUINT64);
-		}
-	}
-
-	//ScanEProcess();
+	ScanEProcess();
 
 	return STATUS_SUCCESS;
 }
