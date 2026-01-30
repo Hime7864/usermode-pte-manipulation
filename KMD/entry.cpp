@@ -70,7 +70,7 @@ NTSTATUS resolve_sigged_imports()
 		return STATUS_UNSUCCESSFUL;
 
 	NtImports::fn_MmPfnDatabase = (decltype(NtImports::fn_MmPfnDatabase))Utils::ResolveRel32(3, Utils::SigScan(kernel_text_base, kernel_text_size, pattern("48 8B 3D ? ? ? ? 48 C1 EF 09")));
-	NtImports::fn_MiGetSystemRegionType = (decltype(NtImports::fn_MiGetSystemRegionType))Utils::ResolveRel32(1, Utils::SigScan(kernel_text_base, kernel_text_size, pattern("E8 ? ? ? ? 8B C8 45 84 FE")));
+	NtImports::fn_MiGetSystemRegionType = (decltype(NtImports::fn_MiGetSystemRegionType))Utils::SigScan(kernel_text_base, kernel_text_size, pattern("48 B8 ? ? ? ? ? ? ? ? 48 3B C8 72 ? 48 C1 E9 ? 81 E1 ? ? ? ? 8D 81 ? ? ? ? 48 8D 0D ? ? ? ? 0F B6 04 08"));
 	NtImports::fn_MiSystemRegionTypeDatabase = (decltype(NtImports::fn_MiSystemRegionTypeDatabase))Utils::ResolveRel32(3, Utils::SigScan(kernel_text_base, kernel_text_size, pattern("48 8D 0D ? ? ? ? 0F B6 04 08 C3")));
 
 	return STATUS_SUCCESS;
@@ -128,7 +128,7 @@ NTSTATUS volatile start()
 		status = resolve_sigged_imports();
 		if (NT_SUCCESS(status))
 			status = DriverEntry(nullptr, nullptr);
-		CleanupDriver();
+		//CleanupDriver();
 		KeUnstackDetachProcess(&apc);
 	}
 	return status;
