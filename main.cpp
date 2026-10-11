@@ -1,7 +1,5 @@
 #include <intrinsics.hpp>
 
-#define printf(Format, ...) NtImports::fn_DbgPrintEx(0, 0, Format, __VA_ARGS__)
-
 const char* GetRegionName(UINT32 type)
 {
 	switch (type)
@@ -33,23 +31,46 @@ const char* GetRegionName(UINT32 type)
 BOOLEAN ValidateTranslation(PHYSICAL_ADDRESS page)
 {
 	auto PfnDatabase = MmPfnDatabase();
-	auto RegionDatabase = (_MI_ASSIGNED_REGION_TYPES*)MiSystemRegionTypeDatabase();
 
 	auto PteAddress = (LINEAR_ADDRESS)PfnDatabase[page >> PAGE_SHIFT].PteAddress;
-	if (PteAddress.pml4e_index <= 256)
+	if (PteAddress.pml4e_index < 256)
+	{
 		return false;// usermode pte will miss identify page as normal
+	}
 
-	auto type = RegionDatabase[PteAddress.pml4e_index - 256];
+	auto type = MiGetSystemRegionType(PteAddress.AsPointer);
 	if (type != AssignedRegionSystemCache)
+	{
 		return false;// pfn page is not marked as system cache
+	}
 
 	return true;
 }
 
 
+static void ReportUsermodeLeaf(PEPROCESS eproc, LINEAR_ADDRESS rva, UINT64 pfn)
+{
+	auto type = MiGetSystemRegionType(MmGetVirtualForPhysical(pfn << PAGE_SHIFT));
+
+	if (!type)
+	{
+		return;
+	}
+
+	if (type == AssignedRegionSystemPtes)
+	{
+		printf("Sessioned PID 0x%08X [ RVA: %p | PFN: %010LLX ] -> type: %s (you should never see this)\n",
+			PsGetProcessId(eproc), rva.AsUINT64, pfn, GetRegionName(type));
+		return;
+	}
+
+	printf("Sessioned PID 0x%08X [ RVA: %p | PFN: %010LLX ] -> type: %s (normal)\n",
+		PsGetProcessId(eproc), rva.AsUINT64, pfn, GetRegionName(type));
+}
+
+
 void ValidateUsermodePageMapping(PEPROCESS eproc)
 {
-	SIZE_T bytes_copied = 0;
 	KAPC_STATE apc;
 
 	auto dtb = *(UINT64*)((UINT64)eproc + 0x28) & ~0xFFF;
@@ -76,12 +97,21 @@ void ValidateUsermodePageMapping(PEPROCESS eproc)
 				KeUnstackDetachProcess(&apc);
 				return;
 			}
-				
+
 			auto pdpt = (MMPTE_HARDWARE*)MmGetVirtualForPhysical(pdpt_pa);
 			for (int l2 = 0; l2 < 512; l2++)
 			{
 				if (pdpt[l2].Valid)
 				{
+					if (pdpt[l2].LargePage)
+					{
+						LINEAR_ADDRESS rva;
+						rva.pml4e_index = l1;
+						rva.pdpte_index = l2;
+						ReportUsermodeLeaf(eproc, rva, pdpt[l2].PageFrameNumber);
+						continue;
+					}
+
 					auto pdt_pa = pdpt[l2].PageFrameNumber << PAGE_SHIFT;
 					if (!ValidateTranslation(pdt_pa))
 					{
@@ -89,12 +119,22 @@ void ValidateUsermodePageMapping(PEPROCESS eproc)
 						KeUnstackDetachProcess(&apc);
 						return;
 					}
-						
+
 					auto pdt = (MMPTE_HARDWARE*)MmGetVirtualForPhysical(pdt_pa);
 					for (int l3 = 0; l3 < 512; l3++)
 					{
 						if (pdt[l3].Valid)
 						{
+							if (pdt[l3].LargePage)
+							{
+								LINEAR_ADDRESS rva;
+								rva.pml4e_index = l1;
+								rva.pdpte_index = l2;
+								rva.pde_index = l3;
+								ReportUsermodeLeaf(eproc, rva, pdt[l3].PageFrameNumber);
+								continue;
+							}
+
 							auto pte_pa = pdt[l3].PageFrameNumber << PAGE_SHIFT;
 							if (!ValidateTranslation(pte_pa))
 							{
@@ -102,40 +142,18 @@ void ValidateUsermodePageMapping(PEPROCESS eproc)
 								KeUnstackDetachProcess(&apc);
 								return;
 							}
-								
+
 							auto pte = (MMPTE_HARDWARE*)MmGetVirtualForPhysical(pte_pa);
 							for (int l4 = 0; l4 < 512; l4++)
 							{
 								if (pte[l4].Valid)
 								{
-									LINEAR_ADDRESS leaf_pfn = MmGetVirtualForPhysical(pte[l4].PageFrameNumber << PAGE_SHIFT);
-									auto type = MiGetSystemRegionType(leaf_pfn.AsPointer);
-
-									if (type)
-									{
-										LINEAR_ADDRESS rva;
-										rva.AsUINT64 = 0;
-										rva.pml4e_index = l1;
-										rva.pdpte_index = l2;
-										rva.pde_index = l3;
-										rva.pte_index = l4;
-
-										switch (type)
-										{
-										case 4:
-										{
-											printf("Sessioned PID 0x%08X [ RVA: %p | PFN: %010LLX ] -> type: %s (you should never see this)\n",
-												PsGetProcessId(eproc), rva.AsUINT64, pte[l4].PageFrameNumber, GetRegionName(type));
-										}break;
-										default:
-										{
-											printf("Sessioned PID 0x%08X [ RVA: %p | PFN: %010LLX ] -> type: %s (normal)\n",
-												PsGetProcessId(eproc), rva.AsUINT64, pte[l4].PageFrameNumber, GetRegionName(type));
-											break;
-										}
-										}
-
-									}
+									LINEAR_ADDRESS rva;
+									rva.pml4e_index = l1;
+									rva.pdpte_index = l2;
+									rva.pde_index = l3;
+									rva.pte_index = l4;
+									ReportUsermodeLeaf(eproc, rva, pte[l4].PageFrameNumber);
 								}
 							}
 						}
@@ -150,15 +168,13 @@ void ValidateUsermodePageMapping(PEPROCESS eproc)
 
 void ScanEProcess()
 {
-	auto MHz = MSR::PSTATE(0).get_frequency_mhz();
-	auto tsc_start = MSR::TSC();
 	auto flink = (UINT64)PsInitialSystemProcess();
-	auto o_UniqueProcessId = *(UINT32*)((UINT64)NtImports::fn_PsGetProcessId + 0x3);// fix for 22H2 & 24H2
+	auto o_UniqueProcessId = *(UINT32*)((UINT64)nt.fn_PsGetProcessId + 0x3);// fix for 22H2 & 24H2
 	do
 	{
 		if (PsGetProcessId((PEPROCESS)flink) != 4)
 		{
-			auto PEB = *(QWORD*)(flink + o_UniqueProcessId + 0x110);
+			auto PEB = *(UINT64*)(flink + o_UniqueProcessId + 0x110);
 			if (PEB)
 			{
 				ValidateUsermodePageMapping((PEPROCESS)flink);
@@ -166,14 +182,12 @@ void ScanEProcess()
 		}
 		flink = *(UINT64*)((UINT64)flink + o_UniqueProcessId + 0x8) - (o_UniqueProcessId + 0x8);
 	} while (flink != (UINT64)PsInitialSystemProcess());
-	double mutiplier = (double)(MSR::TSC() - tsc_start) / (double)MHz;
-	auto Ms = (UINT64)(mutiplier * 1000.0);
-	printf("Usermode pte scan completed in %llu ms\n", Ms);
+	printf("Usermode pte scan completed\n");
 	return;
 }
 
 
-NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
+NTSTATUS DriverEntry()
 {
 	ScanEProcess();
 

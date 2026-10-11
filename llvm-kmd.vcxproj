@@ -24,6 +24,7 @@
     <ProjectGuid>{c31d662a-a0aa-400c-bc40-8ba2771d3a34}</ProjectGuid>
     <RootNamespace>llvmkmd</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>llvm-kmd</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
@@ -109,16 +110,18 @@
     <ClCompile>
       <WarningLevel>TurnOffAllWarnings</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NDEBUG;_CONSOLE</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <DebugInformationFormat>None</DebugInformationFormat>
       <SupportJustMyCode>false</SupportJustMyCode>
       <BufferSecurityCheck>false</BufferSecurityCheck>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <ExceptionHandling>false</ExceptionHandling>
       <Optimization>Full</Optimization>
       <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
-      <AdditionalIncludeDirectories>$(SolutionDir)kmd\</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)Intrinsics\</AdditionalIncludeDirectories>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -132,18 +135,15 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NDEBUG;_CONSOLE</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <DebugInformationFormat>None</DebugInformationFormat>
       <BufferSecurityCheck>false</BufferSecurityCheck>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <ExceptionHandling>false</ExceptionHandling>
-      <Optimization>MinSpace</Optimization>
+      <Optimization>Full</Optimization>
       <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
-      <AdditionalIncludeDirectories>$(SolutionDir)kmd\</AdditionalIncludeDirectories>
-      <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
-      <FavorSizeOrSpeed>Size</FavorSizeOrSpeed>
-      <OmitFramePointers>true</OmitFramePointers>
+      <AdditionalIncludeDirectories>$(SolutionDir)Intrinsics\</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -152,28 +152,33 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="KMD\basics.cpp" />
-    <ClCompile Include="KMD\cpuid.cpp" />
-    <ClCompile Include="KMD\entry.cpp" />
-    <ClCompile Include="KMD\fwAlloc.cpp" />
-    <ClCompile Include="KMD\msr.cpp" />
-    <ClCompile Include="KMD\utils.cpp" />
     <ClCompile Include="Main.cpp" />
+    <ClCompile Include="Intrinsics\cpuid.cpp" />
+    <ClCompile Include="Intrinsics\msr.cpp" />
+    <ClCompile Include="Intrinsics\crt_memory.cpp" />
+    <ClCompile Include="Intrinsics\crt_string.cpp" />
+    <ClCompile Include="Intrinsics\utils_scan.cpp" />
+    <ClCompile Include="Intrinsics\utils_pe.cpp" />
+    <ClCompile Include="Intrinsics\utils_paging.cpp" />
+    <ClCompile Include="Intrinsics\utils_locate.cpp" />
+    <ClCompile Include="Intrinsics\fwa.cpp" />
+    <ClCompile Include="Intrinsics\dtlb_hosted.cpp" />
+    <ClCompile Include="Intrinsics\dtlb_poison_ops.cpp" />
+    <ClCompile Include="Intrinsics\import_resolve.cpp" />
+    <ClCompile Include="Intrinsics\driver_boot.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="KMD\basics.hpp" />
-    <ClInclude Include="KMD\cpuid.hpp" />
-    <ClInclude Include="KMD\entry.hpp" />
-    <ClInclude Include="KMD\fwAlloc.hpp" />
-    <ClInclude Include="KMD\intrinsics.hpp" />
-    <ClInclude Include="KMD\msr.hpp" />
-    <ClInclude Include="KMD\nt_imports.hpp" />
-    <ClInclude Include="KMD\nt_methods.hpp" />
-    <ClInclude Include="KMD\nt_structs.hpp" />
-    <ClInclude Include="KMD\utils.hpp" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="README.md" />
+    <ClInclude Include="Intrinsics\utils.hpp" />
+    <ClInclude Include="Intrinsics\fwa.hpp" />
+    <ClInclude Include="Intrinsics\dtlb.hpp" />
+    <ClInclude Include="Intrinsics\bootstrap.hpp" />
+    <ClInclude Include="Intrinsics\assembly.hpp" />
+    <ClInclude Include="Intrinsics\cpuid.hpp" />
+    <ClInclude Include="Intrinsics\structures.hpp" />
+    <ClInclude Include="Intrinsics\crt.hpp" />
+    <ClInclude Include="Intrinsics\imports.hpp" />
+    <ClInclude Include="Intrinsics\intrinsics.hpp" />
+    <ClInclude Include="Intrinsics\msr.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
