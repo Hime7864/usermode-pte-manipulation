@@ -28,8 +28,58 @@ const char* GetRegionName(UINT32 type)
 	}
 }
 
+constexpr UINT8 ActivePageLocation = 6;
+constexpr UINT64 UserPteRangeSize = 1ull << 38;
+
+static PHYSICAL_MEMORY_RANGE gPhysicalRanges[128];
+static UINT32 gPhysicalRangeCount = 0;
+
+static void InitializePhysicalRanges()
+{
+	auto Ranges = MmGetPhysicalMemoryRanges();
+	if (!Ranges)
+	{
+		return;
+	}
+
+	while (gPhysicalRangeCount < 128 &&
+		Ranges[gPhysicalRangeCount].NumberOfBytes.QuadPart)
+	{
+		gPhysicalRanges[gPhysicalRangeCount] = Ranges[gPhysicalRangeCount];
+		gPhysicalRangeCount++;
+	}
+
+	ExFreePool(Ranges);
+}
+
+static BOOLEAN PfnInPhysicalRanges(UINT64 pfn)
+{
+	if (!gPhysicalRangeCount)
+	{
+		return true;
+	}
+
+	auto Address = pfn << PAGE_SHIFT;
+	for (UINT32 i = 0; i < gPhysicalRangeCount; i++)
+	{
+		auto Base = (UINT64)gPhysicalRanges[i].BaseAddress.QuadPart;
+		auto End = Base + (UINT64)gPhysicalRanges[i].NumberOfBytes.QuadPart;
+		if (Address >= Base && Address < End)
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
 BOOLEAN ValidateTranslation(PHYSICAL_ADDRESS page)
 {
+	if (!PfnInPhysicalRanges(page >> PAGE_SHIFT))
+	{
+		return false;
+	}
+
 	auto PfnDatabase = MmPfnDatabase();
 
 	auto PteAddress = (LINEAR_ADDRESS)PfnDatabase[page >> PAGE_SHIFT].PteAddress;
@@ -48,8 +98,65 @@ BOOLEAN ValidateTranslation(PHYSICAL_ADDRESS page)
 }
 
 
+static void ReportForeignLeafPfn(PEPROCESS eproc, LINEAR_ADDRESS rva, UINT64 pfn, UINT64 pte_page_pfn)
+{
+	if (!PfnInPhysicalRanges(pfn))
+	{
+		return;
+	}
+
+	auto PfnEntry = &MmPfnDatabase()[pfn];
+
+	if (PfnEntry->u4.PrototypePte)
+	{
+		return;
+	}
+
+	if (PfnEntry->u3.e1.PageLocation != ActivePageLocation)
+	{
+		return;
+	}
+
+	if (!PfnEntry->u4.PteFrame ||
+		!PfnInPhysicalRanges(PfnEntry->u4.PteFrame))
+	{
+		return;
+	}
+
+	auto PteBase = MmPteBase();
+	if (!PteBase)
+	{
+		return;
+	}
+
+	auto PteAddress = (UINT64)PfnEntry->PteAddress;
+	auto UserPteEnd = PteBase + UserPteRangeSize;
+	if (PteAddress <= PteBase || PteAddress >= UserPteEnd)
+	{
+		return;
+	}
+
+	auto ExpectedPte = PteBase + ((rva.AsUINT64 >> PAGE_SHIFT) * sizeof(MMPTE));
+	if (PteAddress == ExpectedPte || PfnEntry->u4.PteFrame == pte_page_pfn)
+	{
+		return;
+	}
+
+	printf("PID 0x%08X [ RVA: %p | PFN: %010LLX ] owner PTE: %p | expected PTE: %p (foreign mapping)\n",
+		PsGetProcessId(eproc),
+		(PVOID)rva.AsUINT64,
+		pfn,
+		(PVOID)PteAddress,
+		(PVOID)ExpectedPte);
+}
+
 static void ReportUsermodeLeaf(PEPROCESS eproc, LINEAR_ADDRESS rva, UINT64 pfn)
 {
+	if (!PfnInPhysicalRanges(pfn))
+	{
+		return;
+	}
+
 	auto type = MiGetSystemRegionType(MmGetVirtualForPhysical(pfn << PAGE_SHIFT));
 
 	if (!type)
@@ -153,6 +260,7 @@ void ValidateUsermodePageMapping(PEPROCESS eproc)
 									rva.pdpte_index = l2;
 									rva.pde_index = l3;
 									rva.pte_index = l4;
+									ReportForeignLeafPfn(eproc, rva, pte[l4].PageFrameNumber, pte_pa >> PAGE_SHIFT);
 									ReportUsermodeLeaf(eproc, rva, pte[l4].PageFrameNumber);
 								}
 							}
@@ -189,6 +297,7 @@ void ScanEProcess()
 
 NTSTATUS DriverEntry()
 {
+	InitializePhysicalRanges();
 	ScanEProcess();
 
 	return STATUS_SUCCESS;
