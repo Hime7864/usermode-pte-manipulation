@@ -75,6 +75,7 @@ FUNCTION_TABLE_ENTRY function_table[]{
     {str_hash("ZwDeviceIoControlFile"), &nt.fn_ZwDeviceIoControlFile},
     {str_hash("ZwClose"), &nt.fn_ZwClose},
     {str_hash("KeGetCurrentThread"), &nt.fn_KeGetCurrentThread},
+    {str_hash("KeBugCheckEx"), &nt.fn_KeBugCheckEx},
     {str_hash("PsGetProcessId"), &nt.fn_PsGetProcessId},
     {str_hash("PsLoadedModuleList"), &NtImports::fn_PsLoadedModuleList},
     {str_hash("MmIsIoSpaceActive"), &nt.fn_MmIsIoSpaceActive},

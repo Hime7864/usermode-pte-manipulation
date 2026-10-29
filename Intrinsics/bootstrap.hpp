@@ -21,17 +21,15 @@
 // --- fwa.hpp ---
 #include "fwa.hpp"
 
-// --- dtlb.hpp ---
-#include "dtlb.hpp"
-
 // --- entry.hpp ---
 NTSTATUS resolve_imports();
 
 NTSTATUS resolve_sigged_imports();
 
-NTSTATUS volatile start();
+NTSTATUS volatile start(UINT64 host_base, UINT64 host_size);
 
 NTSTATUS DriverEntry();
+
 
 inline void Sleep(_In_ UINT32 milliseconds)
 {

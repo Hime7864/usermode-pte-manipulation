@@ -6,6 +6,9 @@
 #include "msr.hpp"
 #include "crt.hpp"
 
+inline UINT64 g_self_base = 0;
+inline UINT64 g_self_size = 0;
+
 class Utils
 {
 public:

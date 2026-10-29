@@ -12,19 +12,17 @@ NTSTATUS Utils::LocateSelf(UINT64* module_base, UINT64* module_size)
 {
     if (!module_base)
         return STATUS_INVALID_PARAMETER;
-    *module_base = 0;
 
-    auto first_page = ((UINT64)memcpy) & ~0xFFFULL;
-    auto last_page = Utils::SigScan_s(first_page, 0x200000, pattern("52 65 74 70 6F 6C 69 6E 65 56 31"));
-    if (!last_page)
+    if (!g_self_base || !g_self_size)
+    {
+        *module_base = 0;
+        if (module_size)
+            *module_size = 0;
         return STATUS_UNSUCCESSFUL;
+    }
 
-    if (last_page & 0xFFF)
-        last_page = (last_page & ~0xFFFULL) + 0x1000;
-
-    *module_base = first_page;
+    *module_base = g_self_base;
     if (module_size)
-        *module_size = last_page - first_page;
-
+        *module_size = g_self_size;
     return STATUS_SUCCESS;
 }

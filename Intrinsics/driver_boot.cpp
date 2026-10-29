@@ -53,8 +53,10 @@ void CleanupDriver()
     return;
 }
 
-NTSTATUS volatile start()
+NTSTATUS volatile start(UINT64 host_base, UINT64 host_size)
 {
+    g_self_base = host_base;
+    g_self_size = host_size;
     NTSTATUS status = STATUS_UNSUCCESSFUL;
     auto irql = _mm_readcr8();
     if (NT_SUCCESS(resolve_imports()))

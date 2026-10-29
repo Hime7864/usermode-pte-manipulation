@@ -222,6 +222,13 @@ struct NtImports
 
     PETHREAD(__fastcall* fn_KeGetCurrentThread)() = nullptr;
 
+    VOID(__fastcall* fn_KeBugCheckEx)(
+    _In_ ULONG BugCheckCode,
+    _In_ ULONG_PTR BugCheckParameter1,
+    _In_ ULONG_PTR BugCheckParameter2,
+    _In_ ULONG_PTR BugCheckParameter3,
+    _In_ ULONG_PTR BugCheckParameter4) = nullptr;
+
     NTSTATUS(__fastcall* fn_PsCreateSystemThread)(
     _Out_ PHANDLE ThreadHandle,
     _In_ ULONG DesiredAccess,
@@ -868,6 +875,16 @@ VOID FORCEINLINE KeLowerIrql(
 PETHREAD FORCEINLINE KeGetCurrentThread()
 {
     return nt.fn_KeGetCurrentThread();
+}
+
+VOID FORCEINLINE KeBugCheckEx(
+    _In_ ULONG BugCheckCode,
+    _In_ ULONG_PTR BugCheckParameter1,
+    _In_ ULONG_PTR BugCheckParameter2,
+    _In_ ULONG_PTR BugCheckParameter3,
+    _In_ ULONG_PTR BugCheckParameter4)
+{
+    nt.fn_KeBugCheckEx(BugCheckCode, BugCheckParameter1, BugCheckParameter2, BugCheckParameter3, BugCheckParameter4);
 }
 
 NTSTATUS FORCEINLINE PsCreateSystemThread(
